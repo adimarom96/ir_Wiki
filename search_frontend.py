@@ -12,11 +12,8 @@ bucket_name="adi3158"
 
 back_instance = process()
 
-
-
 @app.route("/search")
 def search():
-
     ''' Returns up to a 100 of your best search results for the query. This is
         the place to put forward your best search engine, and you are free to
         implement the retrieval whoever you'd like within the bound of the 
@@ -40,8 +37,7 @@ def search():
     if len(query) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
-
-    res= back_instance.search(query)
+    res = back_instance.search(query)
     # END SOLUTION
     return jsonify(res)
 
@@ -53,7 +49,7 @@ def search_body():
         tokenization and remove stopwords. 
 
         To issue a query navigate to a URL like:
-         http://34.71.28.211:8080/search_body?query=hello+world
+         http://XXXX-XX-XX-XX-XX/search_body?query=hello+world
 
         where YOUR_SERVER_DOMAIN is something like XXXX-XX-XX-XX-XX.ngrok.io
         if you're using ngrok on Colab or your external IP on GCP.
@@ -93,8 +89,7 @@ def search_title():
     if len(query) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
-    # words,pls  =zip(*inverted.posting_lists_iter_query(query))
-    res= back_instance.search_title(query)
+    res = back_instance.search_title(query)
     # END SOLUTION
     return jsonify(res)
 
@@ -179,7 +174,5 @@ def get_pageview():
 
 
 if __name__ == '__main__':
-
     # run the Flask RESTful API, make the server publicly available (host='0.0.0.0') on port 8080
     app.run(host='0.0.0.0', port=8080, debug=False)
-

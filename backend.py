@@ -9,7 +9,6 @@ import numpy as np
 import math
 from time import time
 import pandas as pd
-
 import sys
 import builtins
 from collections import Counter, OrderedDict, defaultdict
@@ -43,16 +42,16 @@ TF_MASK = 2 ** 16 - 1  # Masking the 16 low bits of an integer
 class MultiFileWriter:
     """ Sequential binary writer to multiple files of up to BLOCK_SIZE each. """
 
-    def __init__(self, base_dir, name, bucket_name):  # 7 #('.',fullname,bucket_name)
+    def __init__(self, base_dir, name, bucket_name):
         self._base_dir = Path(base_dir)
         self._name = name
-        self.client = storage.Client()  # new ohad todo
+        self.client = storage.Client()
         self._bucket_name = self.client.bucket(bucket_name)
         self._file_gen = (open(self._base_dir / f'{name}_{i:03}.bin', 'wb')
                           for i in itertools.count())
         self._f = next(self._file_gen)
 
-    def write(self, b):  # *******************************************
+    def write(self, b):
         locs = []
         while len(b) > 0:
             pos = self._f.tell()
@@ -61,7 +60,7 @@ class MultiFileWriter:
             if remaining == 0:
                 self._f.close()
 
-                file_name = self._f.name  # ohad todo change
+                file_name = self._f.name
                 blob = self._bucket_name.blob(f"postings_gcp/{file_name}")
                 blob.upload_from_filename(file_name)
 
@@ -130,7 +129,6 @@ class InvertedIndex:
         # the number of bytes from the beginning of the file where the posting list
         # starts.
         self.posting_locs = defaultdict(list)
-
         for doc_id, tokens in docs.items():
             self.add_doc(doc_id, tokens)
 
@@ -139,7 +137,6 @@ class InvertedIndex:
             the tf of tokens, then update the index (in memory, no storage
             side-effects).
         """
-        # DL[(doc_id)] = DL.get(doc_id, 0) + (len(tokens))
         w2cnt = Counter(tokens)
         self.term_total.update(w2cnt)
         for w, cnt in w2cnt.items():
@@ -170,9 +167,7 @@ class InvertedIndex:
         """
         with closing(MultiFileReader()) as reader:
             for w, locs in self.posting_locs.items():
-
                 b = reader.read(locs, self.df[w] * TUPLE_SIZE)
-
                 posting_list = []
                 for i in range(self.df[w]):
                     doc_id = int.from_bytes(b[i * TUPLE_SIZE:i * TUPLE_SIZE + 4], 'big')
@@ -183,6 +178,7 @@ class InvertedIndex:
     def posting_lists_iter_query(self, query_to_search):
         """ A generator that reads one posting list from disk and yields
             a (word:str, [(doc_id:int, tf:int), ...]) tuple.
+            for a specific query.
         """
         with closing(MultiFileReader()) as reader:
             for w in query_to_search:
@@ -194,7 +190,6 @@ class InvertedIndex:
                         doc_id = int.from_bytes(b[i * TUPLE_SIZE:i * TUPLE_SIZE + 4], 'big')
                         tf = int.from_bytes(b[i * TUPLE_SIZE + 4:(i + 1) * TUPLE_SIZE], 'big')
                         posting_list.append((doc_id, tf))
-
                 yield w, posting_list
 
     @staticmethod
@@ -210,7 +205,7 @@ class InvertedIndex:
             p.unlink()
 
     @staticmethod
-    def write_a_posting_list(b_w_pl, prefix):  # prefix = indexB / indexT ...
+    def write_a_posting_list(b_w_pl, prefix):  # prefix = indexB / indexT  / indexA
         ''' Takes a (bucket_id, [(w0, posting_list_0), (w1, posting_list_1), ...])
         and writes it out to disk as files named {bucket_id}_XXX.bin under the
         current directory. Returns a posting locations dictionary that maps each
@@ -233,14 +228,13 @@ class InvertedIndex:
                 # convert to bytes
                 b = b''.join([(doc_id << 16 | (tf & TF_MASK)).to_bytes(TUPLE_SIZE, 'big') for doc_id, tf in pl])
                 # write to file(s)
-                locs = writer.write(b)  # ****************************** add index name todo new ohad
+                locs = writer.write(b)
                 # save file locations to index
                 posting_locs[w].extend(locs)
 
             file_name = writer._f.name
             blob = writer._bucket_name.blob(f"postings_gcp/{file_name}")
             blob.upload_from_filename(file_name)
-
         return posting_locs
 
 
@@ -252,7 +246,6 @@ blobs = client.list_blobs(bucket_name)
 class process:
 
     def __init__(self):
-
         x, y, z = self.load_dicts()
         self.page_rank_dict = x
         self.page_view_dict = y
@@ -264,63 +257,77 @@ class process:
         self.invertedB = z
 
     def load_dicts(self):
-
+        '''
+        load to the memory all the data we need to execute a search.
+        all the outsource dicts, page rank and page view.
+        '''
+        # load pagerank
         for blob in client.list_blobs(bucket_name):
             if not blob.name.endswith("page_rank_dict.pckl"):
                 continue
             with blob.open("rb") as f:
                 page_rank_dict = pickle.load(f)
-                print("cretae new pagerank")
-
+                print("create new pagerank")
+        # load page view
         for blob in client.list_blobs(bucket_name):
             if not blob.name.endswith("pageviews-202108-user.pkl"):
                 continue
             with blob.open("rb") as f:
                 page_view_dict = pickle.load(f)
-                print("cretae new pageview")
-
+                print("create new page view")
+        # load title dict
         for blob in client.list_blobs(bucket_name):
             if not blob.name.endswith("title_dict.pkl"):
                 continue
             with blob.open("rb") as f:
                 title_dict = pickle.load(f)
-                print("cretae title dict")
+                print("create title dict")
         return page_rank_dict, page_view_dict, title_dict
 
     def load_indecies(self):
+        '''
+        load all all the indices.
+        '''
         for blob in client.list_blobs(bucket_name):
             if not blob.name.endswith("indexT.pkl"):
                 continue
             with blob.open("rb") as f:
                 invertedT = pickle.load(f)
-                print("cretae invertedT")
+                print("create invertedT")
 
         for blob in client.list_blobs(bucket_name):
             if not blob.name.endswith("indexA.pkl"):
                 continue
             with blob.open("rb") as f:
                 invertedA = pickle.load(f)
-                print("cretae invertedA")
+                print("create invertedA")
 
         for blob in client.list_blobs(bucket_name):
             if not blob.name.endswith("indexB.pkl"):
                 continue
             with blob.open("rb") as f:
                 invertedB = pickle.load(f)
-                print("cretae invertedB")
+                print("create invertedB")
         return invertedT, invertedA, invertedB
 
     def tokenize(self, text):
+        '''
+        take string and returns list of tokens.
+        '''
         list_of_tokens = [token.group() for token in RE_WORD.finditer(text.lower()) if
                           token.group() not in all_stopwords]
         return list_of_tokens
 
     def replace_socre_title(self, doc_id):
-        # print(title_dict[doc_id])
+        '''
+        take doc id and return the title of this doc id.
+        '''
         return " ".join(self.title_dict[doc_id])
 
-    # fornt end function
     def get_rank(self, lst):
+        '''
+        returns the page rank of the docs id in the list param.
+        '''
         res = []
         for doc_id in lst:
             if doc_id in self.page_rank_dict.keys():
@@ -330,6 +337,9 @@ class process:
         return res
 
     def get_pageview(self, lst):
+        '''
+        returns the page view of the docs id in the list param.
+        '''
         res = []
         for doc_id in lst:
             if doc_id in self.page_view_dict.keys():
@@ -339,25 +349,30 @@ class process:
         return res
 
     def search_title(self, query):
+        '''
+        param: query to search
+        return: list of tuples of (doc_id, title).
+        '''
         list_query = self.tokenize(query)
         qDocIdApper = {}  # {309: 2, 2175: 1, 28239: 1, 28240: 1, 24001: 1, 6112: 1, 9232: 1}
         for token in list_query:
-
-            # add bin directory !
-            words, pl = zip(*self.invertedT.posting_lists_iter_query(
-                [token]))  # todo: send pasta+make/make+pasta and check if the same
+            words, pl = zip(*self.invertedT.posting_lists_iter_query([token]))
             for tup in pl[0]:  # [(309, 1), (2175, 1)]
                 docId = tup[0]
                 if docId in qDocIdApper.keys():
                     qDocIdApper[docId] += 1
                 else:
                     qDocIdApper[docId] = 1
-
+        # after we got the (doc_id,score), we replace the score with the title.
         lst1 = sorted(qDocIdApper.items(), key=lambda x: x[1], reverse=True)
         with_title_list = [(x[0], self.replace_socre_title(x[0])) for x in lst1]
         return with_title_list
 
     def search_anchor(self, query):
+        '''
+        param: query to search
+        return: list of tuples of (doc_id, title).
+        '''
         list_query = self.tokenize(query)
         qDocIdApper = {}  # {309: 2, 2175: 1, 28239: 1, 28240: 1, 24001: 1, 6112: 1, 9232: 1}
         for token in list_query:
@@ -368,63 +383,22 @@ class process:
                     qDocIdApper[docId] += 1
                 else:
                     qDocIdApper[docId] = 1
-
+        # after we got the (doc_id,score), we replace the score with the title.
         lst1 = sorted(qDocIdApper.items(), key=lambda x: x[1], reverse=True)
         with_title_list = [(x[0], self.replace_socre_title(x[0])) for x in lst1]
         return with_title_list
 
-    # check function and run
-    def intersection(self, l1, l2):
-        return list(set(l1) & set(l2))
-
-    def precision_at_k(self, true_list, predicted_list, k=40):
-        y = predicted_list[:k]
-        x = self.intersection(y, true_list)
-        res = (len(x) / k)
-        return res
-
-    def average_precision(self, true_list, predicted_list, k=40):
-        preListK = predicted_list[:k]
-        inter = self.intersection(true_list, preListK)
-        lst = []
-
-        for doc_id in inter:
-            indx = preListK.index(doc_id) + 1
-            precisionForDoc = self.precision_at_k(true_list, predicted_list, indx)
-            lst.append(precisionForDoc)
-
-        if len(lst) == 0:
-            return 0
-
-        avgPrec = builtins.sum(lst) / len(lst)
-        return avgPrec
-
-    def print_res(self, tfidf_queries_score_train, query, k1):
-        q = query
-        #     q = " ".join(query)
-        #     q1 =" ".split(query)
-        #     print("join : ", q, " split : ", q1 , " query : ",query)
-        our_res = tfidf_queries_score_train[1]
-        our_docid = [x[0] for x in our_res]
-        lst = self.average_precision(training_dic[q], our_docid)  # k=40
+    def merge_results(self, title_scores, body_scores, title_weight=0.5, text_weight=0.5, N=100):
+        '''
+        this functions gets the results from 2 index search and merge it together according to the weights.
+        At the end it cuts the results to N top results.
+        '''
         lst2 = []
-        c = 0
-        for doc in our_docid:
-            if doc in training_dic[q]:
-                c += 1
-                lst2.append((training_dic[q].index(doc), our_docid.index(doc)))
-        print("map 40:", lst)
-        print("our k: ", k1, " test k: ", len(training_dic[q]), "common: ", c)
-        # print(lst2)
-
-    def merge_results(self, title_scores, body_scores, title_weight=0.5, text_weight=0.5, N=3):
-
-        dic = {}
-        for quer_id in title_scores.keys():  ## if keys not equal might problem!
+        for quer_id in title_scores.keys():
             lst_title = title_scores[quer_id]
             lst_body = body_scores[quer_id]
             lst = []
-            temp_dic = {}  # key id value weighted score
+            temp_dic = {}
             for tup_title in lst_title:
                 temp_dic[tup_title[0]] = tup_title[1] * title_weight
 
@@ -434,14 +408,20 @@ class process:
                 else:
                     temp_dic[tup_body[0]] = text_weight * tup_body[1]
             lst = [(k, v) for k, v in temp_dic.items()]
-            # lst.sort(key=lambda tup: tup[1],reverse=True)[:N]
             lst2 = sorted(lst, reverse=True, key=lambda x: x[1])[:N]
         return lst2
 
     def wcalc(self, score, rank):
+        '''
+        func that give some weight to the page rank.
+        '''
         return score + (2 * (score * rank)) / (score + rank)
 
     def w_rank_view(self, res):  # get list
+        '''
+        gets list of resluts
+        returns: list of results after calc with the page rank
+        '''
         new_res = []
         for tup in res:
             score = tup[1]
@@ -450,24 +430,12 @@ class process:
             new_res.append((tup[0], new_socre))
         return new_res
 
-    def search_body(self,q):
-        ourk = 87
-        dic_query = {}
-        query = self.tokenize(q)
-
-        dic_query[1] = query
-        words, pls = zip(*self.invertedB.posting_lists_iter_query(query))  # need to get list
-        B = self.get_topN_score_for_queries(dic_query,self. invertedB, words, pls,
-                                       ourk)  # {1: [(14044751, 0.57711), (49995633, 0.56526),
-        new_res = self.w_rank_view(B[1])
-        res_sort = sorted(new_res, reverse=True, key=lambda x: x[1])
-        with_title = [(str(x[0]), self.replace_socre_title(x[0])) for x in res_sort]
-        return with_title
-
-
-    def search(self, q, a=0.78, b=0.22, c=0.3, d=0.7):  # list of string[make, pasta]
-        t_start = time()
-        ourk = 87
+    def search_body(self, q):
+        '''
+        this function received a query to search and search only in the body of the text of all corpus.
+        returns: list of tuples (doc_id , title )
+        '''
+        ourk = 100
         dic_query = {}
         query = self.tokenize(q)
 
@@ -475,59 +443,88 @@ class process:
         words, pls = zip(*self.invertedB.posting_lists_iter_query(query))  # need to get list
         B = self.get_topN_score_for_queries(dic_query, self.invertedB, words, pls,
                                             ourk)  # {1: [(14044751, 0.57711), (49995633, 0.56526),
+        new_res = self.w_rank_view(B[1])
+        res_sort = sorted(new_res, reverse=True, key=lambda x: x[1])
+        # after we got the (doc_id,score), we replace the score with the title.
+        with_title = [(str(x[0]), self.replace_socre_title(x[0])) for x in res_sort]
+        return with_title
+
+    def search(self, q, a=0.78, b=0.22, c=0.3, d=0.7):  # list of string[make, pasta]
+        '''
+        The main search function.
+        This function received weights, calc results for each index separately and than call for merge.
+        '''
+
+        ourK = 100
+        dic_query = {}
+        # tokenize the query before search.
+        query = self.tokenize(q)
+        dic_query[1] = query
+        # search in each index alone.
+        words, pls = zip(*self.invertedB.posting_lists_iter_query(query))
+        B = self.get_topN_score_for_queries(dic_query, self.invertedB, words, pls, ourK)
         words, pls = zip(*self.invertedA.posting_lists_iter_query(query))
-        A = self.get_topN_score_for_queries(dic_query, self.invertedA, words, pls, ourk)
+        A = self.get_topN_score_for_queries(dic_query, self.invertedA, words, pls, ourK)
         words, pls = zip(*self.invertedT.posting_lists_iter_query(query))
-        T = self.get_topN_score_for_queries(dic_query, self.invertedT, words, pls, ourk)
+        T = self.get_topN_score_for_queries(dic_query, self.invertedT, words, pls, ourK)
 
-        TB = self.merge_results(A, T, a, b, ourk)
-        mergeBTA = self.merge_results({1: TB}, B, c, d, ourk)
-
+        # merge the results by thw weights.
+        TB = self.merge_results(A, T, a, b, ourK)
+        mergeBTA = self.merge_results({1: TB}, B, c, d, ourK)
         new_res = self.w_rank_view(mergeBTA)
+        # sort the new results and replace score with title.
         res_sort = sorted(new_res, reverse=True, key=lambda x: x[1])
         with_title = [(int(x[0]), self.replace_socre_title(x[0])) for x in res_sort]
         return with_title
 
     # search body help function:
     def generate_query_tfidf_vector(self, query_to_search, index):
+        '''
+        make TF-IDF vector out of the query.
+        '''
         epsilon = .0000001
         Q = np.zeros(len(query_to_search))
         term_vector = query_to_search
         counter = Counter(query_to_search)
         for token in np.unique(query_to_search):
             if token in index.df.keys():  # avoid terms that do not appear in the index.
-                tf = counter[token] / len(query_to_search)  # term frequency divded by the length of the query
+                tf = counter[token] / len(query_to_search)  # term frequency divided by the length of the query
                 df = index.df[token]
                 idf = math.log((len(index.DL)) / (df + epsilon), 10)  # smoothing
                 try:
                     ind = term_vector.index(token)
                     Q[ind] = tf * idf
-
                 except:
                     pass
         return Q
 
     def get_candidate_documents_and_scores(self, query_to_search, index, words, pls):
+        '''
+        returns only the docs id that relevant for the terms in the query.
+        each doc id and term have their score.
+        '''
         candidates = {}
         N = len(index.DL)
         for term in np.unique(query_to_search):
             if term in index.df.keys():
                 list_of_doc = pls[words.index(term)]
-                normlized_tfidf = []
                 for doc_id, freq in list_of_doc:
                     score = (freq / index.DL[doc_id]) * math.log(N / index.df[term], 10)
                     candidates[(doc_id, term)] = candidates.get((doc_id, term), 0) + score
         return candidates
 
     def generate_document_tfidf_matrix(self, query_to_search, index, words, pls):
-        t_start = time()
-        qdict = {}
-        candidates_scores = self.get_candidate_documents_and_scores(query_to_search, index, words,
-                                                                    pls)  # We do not need to utilize all document. Only the docuemnts which have corrspoinding terms with the query.
+        '''
+        We do not need to utilize all document. Only the documents which have corresponding terms with the query.
+        '''
+        candidates_scores = self.get_candidate_documents_and_scores(query_to_search, index, words, pls)
         unique_candidates = np.unique([doc_id for doc_id, freq in candidates_scores.keys()])
         return candidates_scores, unique_candidates
 
     def cosine_similarity(self, candi, uni, query, Q, index):  # for query for candi
+        '''
+        calc cosine similarity for each doc id and all the relevant terms
+        '''
         cosine_dic = {}
         b = np.linalg.norm(Q)
         for doc_id in uni:
@@ -542,14 +539,19 @@ class process:
             a = index.tfidf_dict[doc_id]
             tot = (x / (a * b))
             cosine_dic[doc_id] = tot
-
         return cosine_dic
 
-    def get_top_n(self, sim_dict, N=3):  # todo N=100 ?
+    def get_top_n(self, sim_dict, N=100):
+        '''
+        returns sorted top n results.
+        '''
         return sorted([(doc_id, builtins.round(score, 5)) for doc_id, score in sim_dict.items()], key=lambda x: x[1],
                       reverse=True)[:N]
 
-    def get_topN_score_for_queries(self, queries_to_search, index, words, pls, N=3):
+    def get_topN_score_for_queries(self, queries_to_search, index, words, pls, N=100):
+        '''
+        returns dict with the final answers
+        '''
         dic = {}
         for i in range(1, len(queries_to_search) + 1):
             candi, uni = self.generate_document_tfidf_matrix(queries_to_search[i], index, words, pls)
@@ -559,7 +561,53 @@ class process:
             dic[i] = x
         return dic
 
+    ''' check function '''
 
+    def intersection(self, l1, l2):
+        '''
+        returns intersect between the lists.
+        '''
+        return list(set(l1) & set(l2))
+
+    def precision_at_k(self, true_list, predicted_list, k=40):
+        y = predicted_list[:k]
+        x = self.intersection(y, true_list)
+        res = (len(x) / k)
+        return res
+
+    def average_precision(self, true_list, predicted_list, k=40):
+        preListK = predicted_list[:k]
+        inter = self.intersection(true_list, preListK)
+        lst = []
+        for doc_id in inter:
+            indx = preListK.index(doc_id) + 1
+            precisionForDoc = self.precision_at_k(true_list, predicted_list, indx)
+            lst.append(precisionForDoc)
+        if len(lst) == 0:
+            return 0
+        avgPrec = builtins.sum(lst) / len(lst)
+        return avgPrec
+
+    def print_res(self, tfidf_queries_score_train, query, k1):
+        '''
+        gets our results and compute MAP@40, for every query we have in the training set.
+        '''
+        q = query
+        our_res = tfidf_queries_score_train[1]
+        our_docId = [x[0] for x in our_res]
+        lst = self.average_precision(training_dic[q], our_docId)  # k=40
+        lst2 = []
+        c = 0
+        for doc in our_docId:
+            if doc in training_dic[q]:
+                c += 1
+                lst2.append((training_dic[q].index(doc), our_docId.index(doc)))
+        print("map 40:", lst)
+        print("our k: ", k1, " test k: ", len(training_dic[q]), "common: ", c)
+        # print(lst2)
+
+
+# list of the true answers of the training set.
 python = [23862, 23329, 53672527, 21356332, 4920126, 5250192, 819149, 46448252, 83036, 88595, 18942, 696712, 2032271,
           1984246, 5204237, 645111, 18384111, 3673376, 25061839, 271890, 226402, 2380213, 1179348, 15586616, 50278739,
           19701, 3596573, 4225907, 19160, 1235986, 6908561, 3594951, 18805500, 5087621, 25049240, 2432299, 381782,
@@ -643,15 +691,7 @@ dim_sum = [100640, 269558, 1959777, 22670461, 67072363, 11971218, 34617580, 4777
            18408298, 13958538, 13719853, 41546279, 67493391, 3577886, 2054954, 48241318, 4093674, 898916, 2012983,
            13902799, 2626421, 54284514, 10887219, 40759810, 20505468, 43607423, 6168739, 2134361, 47434601, 47769544,
            19433498, 47837049, 52554299, 678353]
-training_dic = {}
-training_dic['python'] = python
-training_dic['data science'] = data_science
-training_dic['migraine'] = migraine
-training_dic['chocolate'] = chocolate
-training_dic['how to make pasta'] = how_to_make_pasta
-training_dic[
-    'Does pasta have preservatives'] = Does_pasta_have_preservatives  # 46.703346729278564 / MAP 0.527439858396989
-training_dic['how google works'] = how_google_works
-training_dic['what is information retrieval'] = what_is_information_retrieval
-training_dic['NBA'] = NBA
-training_dic['dim sum'] = dim_sum
+training_dic = {'python': python, 'data science': data_science, 'migraine': migraine, 'chocolate': chocolate,
+                'how to make pasta': how_to_make_pasta, 'Does pasta have preservatives': Does_pasta_have_preservatives,
+                'how google works': how_google_works, 'what is information retrieval': what_is_information_retrieval,
+                'NBA': NBA, 'dim sum': dim_sum}
