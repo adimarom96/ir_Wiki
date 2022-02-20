@@ -1,4 +1,4 @@
-# IR_Wiki
+# WIKIPEDIA INFORMATION RETRIEVAL (IR) ENGINE
 The code is organized so there is a frontend file that has the flask and the run command. 
 Also in this file are all the search functions that were given to us, but in every one of them we call a different search function from the process instance.
 The second file is the backend that contains the process class. In this file we also have the Inverted Index class.
