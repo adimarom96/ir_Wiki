@@ -2,18 +2,20 @@
 
 # WIKIPEDIA INFORMATION RETRIEVAL (IR) ENGINE
 
-In this project, we Create an Efficiency information retrieval engine on the entire Wikipedia.
+In this project, we create an efficient information retrieval engine on the entire Wikipedia.
 
 # PRE PROCESS
-We collect all the data from Wikipedia and process it by using GCP cluster and SPARK RDD which allow us to operate functions over the whole data in parallel and Distributed on several machines. 
-We tokenize each page and generate 3 indecis for the body, title, and the anchor text 
-and save those into google buckets.
-To optimize the performance in running time we calculate all the possible calculations before and save them also to the bucket (such as TF-IDF matrix, Document freq dictionary).
+We collect all the data from Wikipedia and process it by using GCP cluster and SPARK RDD which allow us to operate functions over the whole data in parallel and distributed on several machines. 
+We tokenize and parse each page and generate 3 indecis for the body, title, and the anchor text and save those into google buckets.
+To optimize the performance in run time we calculate all the possible calculations before and save them also to the bucket (such as TF-IDF matrix, document frequency dictionary and more).
 
 # RUN TIME
-When running the server, we load the indecis and all the relevant data from the buckets.
-We implement retrieve information by using Cosine Simalarty based on TF-IDF values of the given query and relevant docs (which includes one or more terms from the query) by using a posting - list for each word.
-each posting - list was stored in a bin and in run time we access the neccery posting - list.
+When running the server, we load the indices and all the relevant data from the buckets.
+We implement search by using a posting - list for each word and calculating TF-IDF values of the given query and relevant docs (which includes one or more terms from the query).
+Each posting - list was stored in a bin and in run time we access the necessary posting - list and got the relevant documents.
+For each document, we evaluate its relevance using an optimized Cosine Similarly.
+
+
 
 
 The code is organized so there is a frontend file that has the flask and the run command. 
